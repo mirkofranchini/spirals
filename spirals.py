@@ -6,20 +6,14 @@ import sys
 
 BLACK, GRAY, WHITE, RED = (0,0,0), (50,50,50), (255,255,255), (255,100,100)
 FPS = 60
-WIDHT, HEIGHT = 640, 640
-MIN_LENGHT = 10
-MAX_LINES = 10000
-MAX_ACTIVE_SPIRALS = 3
-MAX_SPIRAL_CENTER_DEVIATION = 10
-
-N_VERTICES_BASE_SHAPES = [3,4,5,6]
 
 class SpiralsHandler(object):
 
-    def __init__(self, view_size):
+    def __init__(self, view_size, n_vertices_base_shapes, max_active_spirals=3):
         self.view_size = np.array(view_size)
+        self.max_active_spirals = max_active_spirals
 
-        self.poly_vertices = [[rotate([0,-1],i*2*pi/n) for i in range(n)] for n in N_VERTICES_BASE_SHAPES]
+        self.poly_vertices = [[rotate([0,-1],i*2*pi/n) for i in range(n)] for n in n_vertices_base_shapes]
         self.etas          = [0.15, 0.1, 0.05]
         self.growth_rates  = [0.0007, 0.0008, 0.0009, 0.0010]
         self.chiralities   = ['+', '-']
@@ -42,7 +36,7 @@ class SpiralsHandler(object):
 
 
     def add_random_spiral(self):
-        if sum([s.active for s in self.spirals]) < MAX_ACTIVE_SPIRALS:
+        if sum([s.active for s in self.spirals]) < self.max_active_spirals:
             poly_vertices = random.choice(self.poly_vertices)
             eta           = random.choice(self.etas)
             growth_rate   = random.choice(self.growth_rates)
@@ -70,7 +64,10 @@ class SpiralsHandler(object):
 
 
 class Spiral(object):
-    
+    MAX_LINES = 10000
+    MIN_LENGHT = 10
+    MAX_SPIRAL_CENTER_DEVIATION = 10
+
     def __init__(self, poly_vertices, chirality, view_size, center, eta=0.1, growth_rate=0.001):
         self.chirality     = chirality
         self.view_size     = np.array(view_size)
@@ -78,7 +75,7 @@ class Spiral(object):
         self.eta           = eta
         self.growth_rate   = growth_rate
 
-        assert chirality=='+' or chirality=='-'
+        assert chirality in ['+','-']
         assert eta > 0 and eta < 1
         assert growth_rate > 0
 
@@ -87,7 +84,7 @@ class Spiral(object):
         self.lines  = []
 
         if chirality == '-':
-            poly_vertices = flip_chirality(poly_vertices)
+            poly_vertices = poly_vertices[::-1]
 
         for i in range(len(poly_vertices)):
             p1 = np.array(poly_vertices[i-1]) + self.center
@@ -125,7 +122,7 @@ class Spiral(object):
         # of the spiral might jump around leading to graphical glitches. If the 
         # center deviates too much from the actual center of the screen, remove 
         # the spiral.
-        if np.linalg.norm(spiral_center-self.center) > MAX_SPIRAL_CENTER_DEVIATION:
+        if np.linalg.norm(spiral_center-self.center) > self.MAX_SPIRAL_CENTER_DEVIATION:
             self.lines = []
             return
 
@@ -135,19 +132,14 @@ class Spiral(object):
 
         # Now add lines in the spiral until the newly added line is smaller than a thrshold:
         if self.active:
-            while np.linalg.norm(self.lines[-1][0] - self.lines[-1][1]) > MIN_LENGHT:
+            while np.linalg.norm(self.lines[-1][0] - self.lines[-1][1]) > self.MIN_LENGHT:
                 for i in range(self.n_vert):
                     i,j = len(self.lines)-1, len(self.lines)-self.n_vert+1
                     self.lines.append(np.array([self.lines[i][1], eta_point(self.lines[j],self.eta)]))
-                if len(self.lines) > MAX_LINES: sys.exit("Too many lines in spiral")
+                if len(self.lines) > self.MAX_LINES: sys.exit("Too many lines in spiral")
 
         # Remove lines that are no longer visible:
         self.lines = [line for line in self.lines if self._is_line_visible(line)]
-
-
-def flip_chirality(l):
-    """flip the chirality of a set of points defining the base-shape of a spiral"""
-    return l[::-1]
 
 
 def eta_point(line, eta):
@@ -168,16 +160,16 @@ def rotate(p, theta):
 
 class App(object):
 
-    def __init__(self):
+    def __init__(self, size=(640,640)):
         pygame.init()
         self._running = True
-        self.size = WIDHT, HEIGHT
+        self.size = size
 
-        self._display_surf = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
+        self.spirals_handler = SpiralsHandler(self.size, [3,4,5,6])
+
+        self.display_surf = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.clock = pygame.time.Clock()
-        self.spirals_handler = SpiralsHandler(self.size)
         self.show_help = True
-
         self.time_prefactor = 1.
 
 
@@ -209,24 +201,23 @@ class App(object):
             pygame.draw.aaline(surface,WHITE,line[0],line[1])
             # pygame.draw.line(surface,GRAY,line[0],line[1], 2)
 
-        self._display_surf.blit(surface, (0,0))
+        self.display_surf.blit(surface, (0,0))
 
         if self.show_help:
-            self._help_text()
+            self.help_text()
 
         pygame.display.flip()
 
 
-    def _help_text(self):
+    def help_text(self):
         y_size = 12
         y = y_size
         myfont = pygame.font.SysFont("Courier", y_size)
-        n_lines = sum([len(spiral.lines) for spiral in self.spirals_handler.spirals])
 
         def add_help_label(text):
             nonlocal y
             label = myfont.render(text, 1, RED)
-            self._display_surf.blit(label, (10, y))
+            self.display_surf.blit(label, (10, y))
             y += y_size
 
         add_help_label("Controls")
